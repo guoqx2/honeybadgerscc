@@ -9,7 +9,7 @@ import (
 
 // New returns an implementation of the chaincode interface.
 func New() shim.Chaincode {
-	fmt.Println("vim-go")
+	fmt.Println("Hello")
 	return &honeybadgerscc{}
 }
 
