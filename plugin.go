@@ -37,8 +37,8 @@ func (s *honeybadgerscc) Init(stub shim.ChaincodeStubInterface) pb.Response {
 }
 
 // StartHbmpc start honeybadgerMPC
-func StartHbmpc() {
-	cmd := exec.Command("python3.7", "-m", "honeybadgermpc.secretshare_hbavsslight", "1", "conf/hbavss.hyper.ini")
+func StartHbmpc(nodeID string) {
+	cmd := exec.Command("python3.7", "-m", "honeybadgermpc.secretshare_hbavsslight", nodeID, "conf/hbavss.hyper.ini")
 	cmd.Dir = "/usr/src/HoneyBadgerMPC"
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
@@ -55,9 +55,9 @@ func (s *honeybadgerscc) Invoke(stub shim.ChaincodeStubInterface) pb.Response {
 	var err error
 	if fn == "set" {
 		result, err = set(stub, args)
-	} else if fn == "hbmpc" {
+	} else if fn == "hbmpc" && len(args) >= 1 {
 		fmt.Println("[honeybadgerscc]HBMPC")
-		StartHbmpc()
+		StartHbmpc(args[0])
 		return shim.Success([]byte("Started HBMPC-hbavss"))
 	} else { // assume 'get' even if fn is nil
 		result, err = get(stub, args)
