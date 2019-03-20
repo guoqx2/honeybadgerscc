@@ -73,8 +73,14 @@ func (s *honeybadgerscc) Invoke(stub shim.ChaincodeStubInterface) pb.Response {
 		return shim.Success([]byte(value))
 	} else if fn == "initRecon" && len(args) >= 2 {
 		key := args[0]
+		checkBytes, _ := stub.GetState(key)
+		if checkBytes == nil {
+			return shim.Success([]byte("NA"))
+		}
 		namespace := args[0]
 		res := InitiatePubRec(key, namespace)
+		stub.PutState(key, []byte(res))
+		fmt.Println(res)
 		return shim.Success([]byte(res))
 	} else if fn == "get" && len(args) > 1 {
 		key := args[0]

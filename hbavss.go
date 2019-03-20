@@ -49,9 +49,13 @@ func InitiatePubRec(key string, namespace string) string {
 	if errmsg != nil {
 		log.Fatalf("cmd.Run() failed with %s\n", errmsg)
 	}
-	fmt.Println(cmd.Stdout)
+	// fmt.Println(cmd.Stdout)
+	results := strings.Split(outb.String(), "\n")
+	fmt.Println("TEST" + strings.TrimSpace(results[0]))
+	fmt.Println("TEST2" + strings.TrimSpace(results[1]))
+
 	fmt.Println(cmd.Stderr)
-	return "None"
+	return strings.TrimSpace(results[1])
 }
 
 // StartPubRec start public reconstruction
