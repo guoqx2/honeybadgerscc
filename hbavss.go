@@ -66,10 +66,15 @@ func StartPubRec(nodeID string, share string) string {
 	cmd.Stdout = &outb
 	cmd.Stderr = &errb
 	errmsg := cmd.Run()
+
+	fmt.Println("In start pub rec ")
+
 	if errmsg != nil {
 		log.Fatalf("cmd.Run() failed with %s\n", errmsg)
 	}
 	lines := strings.Split(outb.String(), "\n")
+	fmt.Println(outb.String())
+	fmt.Println(errb.String())
 	for _, line := range lines {
 		if strings.Contains(line, "Reconstructed Value:") {
 			// Very hacky way of doing this.
@@ -81,6 +86,7 @@ func StartPubRec(nodeID string, share string) string {
 			}
 		}
 	}
+
 	return "None"
 	// fmt.Println("out : ", outb.String(), "err: ", errb.String())
 
