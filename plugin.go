@@ -3,18 +3,30 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"log"
+	"net"
+	"sync"
 
 	"github.com/hyperledger/fabric/core/chaincode/shim"
 	pb "github.com/hyperledger/fabric/protos/peer"
+	"github.com/syndtr/goleveldb/leveldb"
 )
 
 // New returns an implementation of the chaincode interface.
 func New() shim.Chaincode {
 	fmt.Println("[honeybadgerscc] Chaincode Started.")
+
 	return &honeybadgerscc{}
 }
 
-type honeybadgerscc struct{}
+type honeybadgerscc struct {
+	db *leveldb.DB
+}
+
+var db *leveldb.DB
+var db_name string
+
+var rec_mutex sync.Mutex
 
 type secretcell struct {
 	ObjectType string `json:"docType"`
@@ -25,34 +37,41 @@ type secretcell struct {
 	Value      string `json:"Value"`
 }
 
+func GetOutboundIP() net.IP {
+	conn, err := net.Dial("udp", "8.8.8.8:80")
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer conn.Close()
+
+	localAddr := conn.LocalAddr().(*net.UDPAddr)
+
+	return localAddr.IP
+}
+
 // Init implements the chaincode shim interface
 func (s *honeybadgerscc) Init(stub shim.ChaincodeStubInterface) pb.Response {
 	fmt.Println("[honeybadgerscc]Init is called")
-	args := stub.GetStringArgs()
-	if len(args) != 2 {
-		return shim.Error("Incorrect arguments. Expecting a key and a value")
-	}
-
-	// Set up any variables or assets here by calling stub.PutState()
-	// We store the key and the value on the ledger
-	err := stub.PutState(args[0], []byte(args[1]))
-	if err != nil {
-		return shim.Error(fmt.Sprintf("Failed to create asset: %s", args[0]))
-	}
-
-	err = stub.PutState("readToken", []byte("0"))
-	if err != nil {
-		return shim.Error("Unable to set readToken")
+	/// db_name = GetOutboundIP().String()
+	s.db, _ = leveldb.OpenFile("db", nil)
+	defer s.db.Close()
+	if db == nil {
+		fmt.Println("DB is nil")
+		// s.Init(stub)
+	} else {
+		fmt.Println("DB is not nil ")
 	}
 	return shim.Success(nil)
 }
 
-func reconstructHelper(nodeID string, share string, key string) {
-	dbPut(key+"_result", "None")
+func reconstructHelper(db *leveldb.DB, nodeID string, share string, key string) {
+	dbPut(db, key+"_result", "None")
+	rec_mutex.Lock()
 	res := StartPubRec(nodeID, share)
+	rec_mutex.Unlock()
 	fmt.Println("In reconstructHelper")
 	fmt.Println(res)
-	dbPut(key+"_result", res)
+	dbPut(db, key+"_result", res)
 }
 
 // Invoke implements the chaincode shim interface
@@ -75,7 +94,8 @@ func (s *honeybadgerscc) Invoke(stub shim.ChaincodeStubInterface) pb.Response {
 		if err != nil {
 			return shim.Error(err.Error())
 		}
-		dbPut("nodeID", args[0])
+		dbPut(nil, "nodeID", args[0])
+		dbPut(nil, "mutex", "1")
 		var cellInstance secretcell
 		json.Unmarshal([]byte(cellJSON), &cellInstance)
 
@@ -85,7 +105,7 @@ func (s *honeybadgerscc) Invoke(stub shim.ChaincodeStubInterface) pb.Response {
 		share := StartHbmpc(args[0])
 		if share != "None" {
 			cellInstance.IsWritten = true
-			dbPut(key, share) // Store the share in the private db
+			dbPut(nil, key, share) // Store the share in the private db
 			cellJSON, err = json.Marshal(cellInstance)
 			if err != nil {
 				return shim.Error(err.Error())
@@ -128,44 +148,45 @@ func (s *honeybadgerscc) Invoke(stub shim.ChaincodeStubInterface) pb.Response {
 		// args[1] = namespace
 		key := args[0]
 		fmt.Println("[honeybadgerscc] getResult")
-		if dbGet(key+"_result") == "None" {
+		if dbGet(nil, key+"_result") == "None" {
 			return shim.Success([]byte("Success"))
 		} else {
-			val := dbGet(key + "_result")
+			val := dbGet(nil, key+"_result")
 			var cellInstance secretcell
 			cellJSON, _ := stub.GetState(key)
 			json.Unmarshal([]byte(cellJSON), &cellInstance)
 			cellInstance.Value = val
+			cellInstance.IsOpen = true
 			cellJSON, err := json.Marshal(cellInstance)
 			if err != nil {
 				return shim.Error(err.Error())
 			}
 			stub.PutState(key, cellJSON)
-			return shim.Success([]byte(dbGet(key + "_result")))
+			return shim.Success([]byte(dbGet(nil, key+"_result")))
 
 		}
 	} else if fn == "getKey" && len(args) >= 1 {
 		// args[0] = key
 		// TODO Add authentication to this
 		key := args[0]
-		share := dbGet(key)
+		share := dbGet(nil, key)
 		return shim.Success([]byte(share))
 	} else if fn == "pubRecon" && len(args) >= 2 {
 		// args[0] = key
 		// args[1] = namespace
 		fmt.Println("In pubRecon")
 		key := args[0]
-		nodeID := dbGet("nodeID")
+		nodeID := dbGet(nil, "nodeID")
 		cellJSON, err := stub.GetState(key)
 		if err != nil {
 			return shim.Error(err.Error())
 		}
 		fmt.Println(nodeID)
-		share := dbGet(key)
+		share := dbGet(nil, key)
 		var cellInstance secretcell
 		json.Unmarshal([]byte(cellJSON), &cellInstance)
 
-		go reconstructHelper(nodeID, share, key)
+		go reconstructHelper(nil, nodeID, share, key)
 		value := "12"
 		// err := stub.PutState(key, []byte(value))
 		// if err != nil {

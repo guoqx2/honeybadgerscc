@@ -51,6 +51,7 @@ func InitiatePubRec(key string, namespace string) string {
 	}
 	// fmt.Println(cmd.Stdout)
 	results := strings.Split(outb.String(), "\n")
+
 	fmt.Println("TEST" + strings.TrimSpace(results[0]))
 	fmt.Println("TEST2" + strings.TrimSpace(results[1]))
 
@@ -66,7 +67,7 @@ func StartPubRec(nodeID string, share string) string {
 	cmd.Stdout = &outb
 	cmd.Stderr = &errb
 	errmsg := cmd.Run()
-
+	//dbPut("mutex", "1")
 	fmt.Println("In start pub rec ")
 
 	if errmsg != nil {
