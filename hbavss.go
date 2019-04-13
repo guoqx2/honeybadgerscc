@@ -6,13 +6,15 @@ import (
 	"log"
 	"os/exec"
 	"strings"
+
+	"github.com/syndtr/goleveldb/leveldb"
 )
 
 // StartHbmpc start honeybadgerMPC
 // nodeID string
 // namespace string
 // key string
-func StartHbmpc(nodeID string) string {
+func StartHbavss(nodeID string) string {
 	cmd := exec.Command("python3.7", "-m", "honeybadgermpc.secretshare_hbavsslight", nodeID, "conf/hbavss.hyper.ini")
 	cmd.Dir = "/usr/src/HoneyBadgerMPC"
 	var outb, errb bytes.Buffer
@@ -91,6 +93,16 @@ func StartPubRec(nodeID string, share string) string {
 	return "None"
 	// fmt.Println("out : ", outb.String(), "err: ", errb.String())
 
+}
+
+func reconstructHelper(db *leveldb.DB, nodeID string, share string, key string) {
+	dbPut(db, key+"_result", "None")
+	rec_mutex.Lock()
+	res := StartPubRec(nodeID, share)
+	rec_mutex.Unlock()
+	fmt.Println("In reconstructHelper")
+	fmt.Println(res)
+	dbPut(db, key+"_result", res)
 }
 
 // TODO

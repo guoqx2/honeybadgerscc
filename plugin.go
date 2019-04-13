@@ -3,8 +3,6 @@ package main
 import (
 	"encoding/json"
 	"fmt"
-	"log"
-	"net"
 	"sync"
 
 	"github.com/hyperledger/fabric/core/chaincode/shim"
@@ -23,9 +21,6 @@ type honeybadgerscc struct {
 	db *leveldb.DB
 }
 
-var db *leveldb.DB
-var db_name string
-
 var rec_mutex sync.Mutex
 
 type secretcell struct {
@@ -37,41 +32,10 @@ type secretcell struct {
 	Value      string `json:"Value"`
 }
 
-func GetOutboundIP() net.IP {
-	conn, err := net.Dial("udp", "8.8.8.8:80")
-	if err != nil {
-		log.Fatal(err)
-	}
-	defer conn.Close()
-
-	localAddr := conn.LocalAddr().(*net.UDPAddr)
-
-	return localAddr.IP
-}
-
 // Init implements the chaincode shim interface
 func (s *honeybadgerscc) Init(stub shim.ChaincodeStubInterface) pb.Response {
 	fmt.Println("[honeybadgerscc]Init is called")
-	/// db_name = GetOutboundIP().String()
-	s.db, _ = leveldb.OpenFile("db", nil)
-	defer s.db.Close()
-	if db == nil {
-		fmt.Println("DB is nil")
-		// s.Init(stub)
-	} else {
-		fmt.Println("DB is not nil ")
-	}
 	return shim.Success(nil)
-}
-
-func reconstructHelper(db *leveldb.DB, nodeID string, share string, key string) {
-	dbPut(db, key+"_result", "None")
-	rec_mutex.Lock()
-	res := StartPubRec(nodeID, share)
-	rec_mutex.Unlock()
-	fmt.Println("In reconstructHelper")
-	fmt.Println(res)
-	dbPut(db, key+"_result", res)
 }
 
 // Invoke implements the chaincode shim interface
@@ -102,7 +66,7 @@ func (s *honeybadgerscc) Invoke(stub shim.ChaincodeStubInterface) pb.Response {
 		if !authenticateRequest(namespace, key) {
 			return shim.Success([]byte("Failed to authenticate request"))
 		}
-		share := StartHbmpc(args[0])
+		share := StartHbavss(args[0])
 		if share != "None" {
 			cellInstance.IsWritten = true
 			dbPut(nil, key, share) // Store the share in the private db
@@ -149,7 +113,7 @@ func (s *honeybadgerscc) Invoke(stub shim.ChaincodeStubInterface) pb.Response {
 		key := args[0]
 		fmt.Println("[honeybadgerscc] getResult")
 		if dbGet(nil, key+"_result") == "None" {
-			return shim.Success([]byte("Success"))
+			return shim.Success([]byte("None"))
 		} else {
 			val := dbGet(nil, key+"_result")
 			var cellInstance secretcell
@@ -164,6 +128,17 @@ func (s *honeybadgerscc) Invoke(stub shim.ChaincodeStubInterface) pb.Response {
 			stub.PutState(key, cellJSON)
 			return shim.Success([]byte(dbGet(nil, key+"_result")))
 
+		}
+	} else if fn == "getMPCOutput" && len(args) >= 2 {
+		// args[0] = instance of mpc computation
+		// args[1] = namespace
+		instance := args[0]
+		fmt.Println("[honeybadgerscc] getMPCOutput")
+		if dbGet(nil, instance+"_result") == "None" {
+			return shim.Success([]byte("None"))
+		} else {
+			result := dbGet(nil, instance+"_result")
+			return shim.Success([]byte(result))
 		}
 	} else if fn == "getKey" && len(args) >= 1 {
 		// args[0] = key
@@ -185,14 +160,11 @@ func (s *honeybadgerscc) Invoke(stub shim.ChaincodeStubInterface) pb.Response {
 		share := dbGet(nil, key)
 		var cellInstance secretcell
 		json.Unmarshal([]byte(cellJSON), &cellInstance)
-
-		go reconstructHelper(nil, nodeID, share, key)
-		value := "12"
-		// err := stub.PutState(key, []byte(value))
-		// if err != nil {
-		//	return shim.Error(err.Error())
-		// }
-		return shim.Success([]byte(value))
+		if cellInstance.IsWritten == true {
+			go reconstructHelper(nil, nodeID, share, key)
+			return shim.Success([]byte("OK"))
+		}
+		return shim.Success([]byte("None"))
 	} else if fn == "initRecon" && len(args) >= 2 {
 		// Deprecated - only for testing
 		// TODO remove
@@ -225,6 +197,36 @@ func (s *honeybadgerscc) Invoke(stub shim.ChaincodeStubInterface) pb.Response {
 			return shim.Success([]byte("Key does not exist yet"))
 		}
 		return shim.Success([]byte(value))
+	} else if fn == "mpcOp" && len(args) > 3 {
+		// args[0] = name of mpc operation
+		// args[1] = namespace
+		// args[2] = instance
+		// args[3] - args[n] secret cells
+		appName := args[0]
+		instance := args[2]
+		secretCells := args[3:]
+		fmt.Println("In pubRecon")
+		shares := make([]string, len(secretCells))
+		nodeID := dbGet(nil, "nodeID")
+		for i, key := range secretCells {
+			cellJSON, err := stub.GetState(key)
+			if err != nil {
+				return shim.Error(err.Error())
+			}
+
+			shares[i] = dbGet(nil, key)
+			var cellInstance secretcell
+			json.Unmarshal([]byte(cellJSON), &cellInstance)
+			// return error if any of the cells do not exist yet
+			if cellInstance.IsWritten == false {
+				return shim.Success([]byte("None"))
+			}
+
+		}
+		go mpcStarter(nil, nodeID, appName, instance, shares...)
+
+		return shim.Success([]byte("None"))
+
 	}
 	if err != nil {
 		return shim.Error(err.Error())
